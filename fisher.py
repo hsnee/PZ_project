@@ -311,6 +311,7 @@ class Fisher:
         
     def __repr__(self):
         return f'Run status: {self.has_run} \
+                with cosmology: {self.cosmo} \
                 with Photo-z error model:  \
                 - bias:  {self.zbias} \
                 - variance {[v*0.05 for v in self.zvariance]} \
@@ -390,6 +391,12 @@ class Fisher:
         for i in set(self.ccl_cls['zbin']):
             C_ells.append(list(self.ccl_cls[self.ccl_cls['zbin']==i]['C_ell']))
         return C_ells
+
+    def _makeShearShearCells(self):
+        pass
+
+    def _makePosPosCells(self):
+        pass
     
     def buildCovMatrix(self):
         print('Getting covariance matrix')
