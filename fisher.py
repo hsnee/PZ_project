@@ -14,6 +14,8 @@ from copy import deepcopy
 from numbers import Number
 from itertools import chain
 import seaborn as sns
+from sklearn.neighbors import KernelDensity
+import pickle
 
 def FoM(matrix):
     return np.sqrt(np.linalg.det(matrix))
@@ -47,10 +49,8 @@ def get_cov_matrix(l, data_order, cl_vals, orderings, fsky):
     out_cov = np.zeros((len(data_order), len(data_order)))
     for z in range(out_cov.shape[0]):
         for y in range(out_cov.shape[1]):
-            i = data_order[z][0]
-            j = data_order[z][1]
-            k = data_order[y][0]
-            l = data_order[y][1]
+            i, j = (data_order[z][_] for _ in [0, 1])
+            k, l = (data_order[y][_] for _ in [0, 1])
 
             try:
                 cl_ik = cl_vals[orderings.index([i, k])]
@@ -148,7 +148,7 @@ class PhotoZ_core(object):
         loc = z - self.zbias
         return rv.pdf((self.zp_support - loc) / scale) / scale
 
-class CoreAndOutlier(object):
+class Core(object):
     """Defines the core and outlier population
     """
     def __init__(self, zp_support, zbias, sigma_z):
@@ -212,44 +212,42 @@ class PhotozModel(object):
 
 
 
-def FullPlot(*args, labels='LongString'):
-    
-    for params in [['omega_m', 'sigma_8'],
-                   ['w_0', 'w_a']]:
-        colors = sns.color_palette(palette='colorblind', n_colors=len(args))
-        es = []
-        for i, arg in enumerate(args):
-            if not arg.has_run:
-                raise ValueError('This class has not been processed yet.')
-            matrix = arg.fisher
-            e, (xlim, ylim) = plot_contours(
-                marginalize(matrix, 
-                            arg.param_order.index(params[0]), 
-                            arg.param_order.index(params[1])),
-                sigmas=2,
-                fid=(arg.vals[params[0]], arg.vals[params[1]]))
-            e.set_facecolor(colors[i])
-            e.set_label(labels[i])
-            e.set_alpha(1/(1+len(args)))
-            es.append(e)
+def FullPlot(params, *args, labels='LongString'):
+    colors = sns.color_palette(palette='colorblind', n_colors=len(args))
+    es = []
+    for i, arg in enumerate(args):
+        if not arg.has_run:
+            raise ValueError('This class has not been processed yet.')
+        matrix = arg.fisher
+        e, (xlim, ylim) = plot_contours(
+            marginalize(matrix, 
+                        arg.param_order.index(params[0]), 
+                        arg.param_order.index(params[1])),
+            sigmas=2,
+            fid=(arg.vals[params[0]], arg.vals[params[1]]))
+        e.set_facecolor(colors[i])
+        e.set_label(labels[i])
+        e.set_alpha(1/(1+len(args)))
+        es.append(e)
 
-        fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
-        for i, e in enumerate(es):
-            ax.add_artist(e)
+    fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
+    for i, e in enumerate(es):
+        ax.add_artist(e)
 
-        _ = plt.xlim((xlim))
-        _ = plt.ylim((ylim))
-        _ = plt.legend(handles=es, loc=(0.7, 0.7))
-        _ = plt.xlabel(arg.param_labels[arg.param_order.index(params[0])])
-        _ = plt.ylabel(arg.param_labels[arg.param_order.index(params[1])])
-        _ = plt.figure()
+    _ = plt.xlim((xlim))
+    _ = plt.ylim((ylim))
+    #_ = plt.legend(handles=es, loc=(0.7, 0.7))
+    _ = plt.xlabel(arg.param_labels[arg.param_order.index(params[0])])
+    _ = plt.ylabel(arg.param_labels[arg.param_order.index(params[1])])
+    _ = plt.figure()
 
 
 
 class Fisher:
-    def __init__(self, cosmo, zvariance=[1,1,1,1,1], zbias=[0,0,0,0,0], calcCov=False, plot_label=None):
+    def __init__(self, cosmo, zvariance=[1,1,1,1,1], zbias=[0,0,0,0,0], outliers=[1,1,1,1,1], calcCov=False, plot_label=None):
         self.zvariance = zvariance
         self.zbias = zbias
+        self.outliers = outliers
         self.has_run = False
         self.calcCov = calcCov
         self.plot_label = plot_label
@@ -271,7 +269,12 @@ class Fisher:
             'zvariance2': self.getC_ellOfzvariance2,
             'zvariance3': self.getC_ellOfzvariance3,
             'zvariance4': self.getC_ellOfzvariance4,
-            'zvariance5': self.getC_ellOfzvariance5
+            'zvariance5': self.getC_ellOfzvariance5,
+            'zoutlier1': self.getC_ellOfzoutlier1,
+            'zoutlier2': self.getC_ellOfzoutlier2,
+            'zoutlier3': self.getC_ellofzoutlier3,
+            'zoutlier4': self.getC_ellOfzoutlier4,
+            'zoutlier5': self.getC_ellofzoutlier5
 
         }
         self.vals = {
@@ -283,9 +286,10 @@ class Fisher:
             'w_0': -1,
             'w_a': 0,
         }
-        for i, (b, v) in enumerate(zip(self.zbias, self.zvariance)):
+        for i in range(5):
             self.vals['zbias'+str(i+1)] = 0
-            self.vals['zvariance'+str(i+1)] = 0
+            self.vals['zvariance'+str(i+1)] = 1
+            self.vals['zoutlier'+str(i+1)] = 1
         self.priors = {
             'sigma_8': 1/0.14**2, 
             'omega_b': 1/0.006**2, 
@@ -304,9 +308,14 @@ class Fisher:
             'zvariance3': 1/2**2,
             'zvariance4': 1/2**2,
             'zvariance5': 1/2**2,
+            'zoutlier1': 1/2**2,
+            'zoutlier2': 1/2**2,
+            'zoutlier3': 1/2**2,
+            'zoutlier4': 1/2**2,
+            'zoutlier5': 1/2**2,
         }
-        self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)]
-        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)]
+        self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)] + ['zoutlier'+str(i) for i in range(1,6)]
+        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)]
         
         
     def __repr__(self):
@@ -315,22 +324,22 @@ class Fisher:
                 with Photo-z error model:  \
                 - bias:  {self.zbias} \
                 - variance {[v*0.05 for v in self.zvariance]} \
-                - outliers: not implemented'
+                - outliers: {[o*0.03 for o in self.outliers]}'
         
     def _makeLensPZ(self):
         raise NotImplemented('Lens distributions not implemented yet.')
         
-    def _NormalizePZ(self, qs, dNdz_dict_source):
+    def _NormalizePZ(self, qs, dNdz_dict_source, m=1):
         for q, k in zip(qs, dNdz_dict_source.keys()):
             dNdz_dict_source[k] = dNdz_dict_source[k]*sum(qs)/q
             f = CubicSpline(self.zmid, dNdz_dict_source[k])
             d = quad(f, 0, 4)[0]
             for k in dNdz_dict_source.keys():
-                dNdz_dict_source[k] /= d
+                dNdz_dict_source[k] /= (d*m)
             return dNdz_dict_source
         
     
-    def _makeSourcePZ(self, file='nzdist.txt'):
+    def _makeSourcePZ(self, file='nzdist.txt', implement_outliers=True):
         print('Making Source Photo-z')
         df = pd.read_csv(file, sep=' ') 
         self.zmid = df['zmid']
@@ -349,14 +358,30 @@ class Fisher:
         for index, (x,x2) in enumerate(zip(bins[:-1], bins[1:])):
             bias = self.zbias[index]
             variance = self.zvariance[index]
-            coreandoutlier = CoreAndOutlier(self.zmid, zbias=0.1*bias, sigma_z=variance)
+            core = Core(self.zmid, zbias=0.1*bias, sigma_z=variance*0.05)
             tomofilter = uniform.pdf(self.zmid, loc=x, scale=x2-x)
-            photoz_model = PhotozModel(pdf_z, coreandoutlier, [tomofilter])
+            photoz_model = PhotozModel(pdf_z, core, [tomofilter])
             dNdz_dict_source[bin_centers[index]] = photoz_model.get_pdf()[0]
             f = CubicSpline(self.zmid, dNdz_dict_source[bin_centers[index]])
             qs.append(quad(f, 0, 4)[0])
-        dNdz_dict_source = self._NormalizePZ(qs, dNdz_dict_source)
+        norm = 1
+        
+        if implement_outliers:
+            # inbin = [0.009780926739896716, 0.0022554556214481247, 0.020947481173020983, 0.04831089597165704, 0.07238322930340861]
+            inbin = [0.03]*5
+            inbin = [inbin[i]*self.outliers[i] for i in range(len(inbin))]
+            norm = 1 - sum(inbin)
+
+        dNdz_dict_source = self._NormalizePZ(qs, dNdz_dict_source, 5/norm)
         self.dNdz_dict_source = dNdz_dict_source
+        
+        if implement_outliers:
+            self.scores = []
+            self.KDEs = pickle.load(open('KDEs.p', 'rb'))
+            for i, b in enumerate(list(sorted(self.dNdz_dict_source.keys()))):
+                kde = self.KDEs[i]
+                self.scores.append(np.exp(kde.score_samples(np.array(self.zmid).reshape(-1, 1))))
+                self.dNdz_dict_source[b] += self.scores[i]*inbin[i]
             
     def getElls(self, file='ell-values.txt'):
         print('Getting Ells')
@@ -509,94 +534,163 @@ class Fisher:
         self.pos, self.prob, self.state = self.sampler.run_mcmc(p00, 50)
         self.sampler.reset()
         self.sampler.run_mcmc(self.pos, nsteps, rstate0=self.state)
+        
+    def _outlier_helper(self, idx, zoutlier):
+        pdf_z = SmailZ(self.zmid, np.array(self.dneff))
+        dNdz_dict_source = {}
+        qs = []
+        for index, (x,x2) in enumerate(zip(bins[:-1], bins[1:])):
+            core = Core(self.zmid, zbias=0.1*self.zbias[index], sigma_z=self.zvariance[index]*0.05)
+            tomofilter = uniform.pdf(self.zmid, loc=x, scale=x2-x)
+            photoz_model = PhotozModel(pdf_z, core, [tomofilter])
+            dNdz_dict_source[bin_centers[index]] = photoz_model.get_pdf()[0]
+            f = CubicSpline(self.zmid, dNdz_dict_source[bin_centers[index]])
+            qs.append(quad(f, 0, 4)[0])
+        
+        inbin = [0.03]*5
+        for index in range(len(self.bins)-1):
+            if index==idx: 
+                inbin[index] = inbin[index]*self.outliers[index]*zoutlier
+            else:
+                inbin[index] = inbin[index]*self.outliers[index]
+        norm = 1 - sum(inbin)
 
-    def _bias_helper(self, index):
+        dNdz_dict_source = self._NormalizePZ(qs, dNdz_dict_source, 5/norm)
+        
+        
+        for i, b in enumerate(list(sorted(self.dNdz_dict_source.keys()))):
+            dNdz_dict_source[b] += self.scores[i]*inbin[i]
+        return dNdz_dict_source
+
+    def getC_ellOfzoutlier1(self, zoutlier):
+        index = 0
+        dNdz_dict_source = self._bias_helper(index, zoutlier)
+        return self._helper(self.cosmo, dNdz_dict_source)
+    
+    def getC_ellOfzoutlier2(self, zoutlier):
+        index = 1
+        dNdz_dict_source = self._bias_helper(index, zoutlier)
+        return self._helper(self.cosmo, dNdz_dict_source)
+
+    def getC_ellofzoutlier3(self, zoutlier):
+        index = 2
+        dNdz_dict_source = self._bias_helper(index, zoutlier)
+        return self._helper(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzoutlier4(self, zoutlier):
+        index = 3
+        dNdz_dict_source = self._bias_helper(index, zoutlier)
+        return self._helper(self.cosmo, dNdz_dict_source)
+
+    def getC_ellofzoutlier5(self, zoutlier):
+        index = 4
+        dNdz_dict_source = self._bias_helper(index, zoutlier)
+        return self._helper(self.cosmo, dNdz_dict_source)
+    
+    def _bias_helper(self, idx, zbias):
         pdf_z = SmailZ(self.zmid, np.array(self.dneff))
         dNdz_dict_source = {}
         qs = []
         for index, (x,x2) in enumerate(zip(self.bins[:-1], self.bins[1:])):
-            zbias = self.zbias[index]
-            if index==index:
-                coreandoutlier = CoreAndOutlier(self.zmid, zbias=zbias, sigma_z=0.05)
+            if index==idx:
+                core = Core(self.zmid, zbias=self.zbias[index]*zbias, sigma_z=0.05*self.zvariance[index])
             else:
-                coreandoutlier = CoreAndOutlier(self.zmid, zbias=0, sigma_z=0.05)
+                core = Core(self.zmid, zbias=self.zbias[index], sigma_z=0.05*self.zvariance[index])
             tomofilter = uniform.pdf(self.zmid, loc=x, scale=x2-x)
-            photoz_model = PhotozModel(pdf_z, coreandoutlier, [tomofilter])
+            photoz_model = PhotozModel(pdf_z, core, [tomofilter])
             dNdz_dict_source[self.bin_centers[index]] = photoz_model.get_pdf()[0]
             f = CubicSpline(self.zmid, dNdz_dict_source[self.bin_centers[index]])
             qs.append(quad(f, 0, 4)[0])
 
-        return self._NormalizePZ(qs, dNdz_dict_source)
+        inbin = [0.03]*5
+        for index in range(len(self.bins)-1):
+            inbin[index] = inbin[index]*self.outliers[index]
+        norm = 1 - sum(inbin)
+
+        dNdz_dict_source = self._NormalizePZ(qs, dNdz_dict_source, 5/norm)
+        
+        for i, b in enumerate(list(sorted(self.dNdz_dict_source.keys()))):
+            dNdz_dict_source[b] += self.scores[i]*inbin[i]
+        return dNdz_dict_source
 
 
     def getC_ellOfzbias1(self, zbias):
         index = 0
-        dNdz_dict_source = self._bias_helper(index)
+        dNdz_dict_source = self._bias_helper(index, zbias)
         return self._helper(self.cosmo, dNdz_dict_source)
     
     def getC_ellOfzbias2(self, zbias):
         index = 1
-        dNdz_dict_source = self._bias_helper(index)
+        dNdz_dict_source = self._bias_helper(index, zbias)
         return self._helper(self.cosmo, dNdz_dict_source)
 
     def getC_ellOfzbias3(self, zbias):
         index = 2
-        dNdz_dict_source = self._bias_helper(index)
+        dNdz_dict_source = self._bias_helper(index, zbias)
         return self._helper(self.cosmo, dNdz_dict_source)
 
     def getC_ellOfzbias4(self, zbias):
         index = 3
-        dNdz_dict_source = self._bias_helper(index)
+        dNdz_dict_source = self._bias_helper(index, zbias)
         return self._helper(self.cosmo, dNdz_dict_source)
 
     def getC_ellOfzbias5(self, zbias):
         index = 4
-        dNdz_dict_source = self._bias_helper(index)
+        dNdz_dict_source = self._bias_helper(index, zbias)
         return self._helper(self.cosmo, dNdz_dict_source)
 
-    def _variance_helper(self, index):
+    def _variance_helper(self, idx, zvar):
         pdf_z = SmailZ(self.zmid, np.array(self.dneff))
         dNdz_dict_source = {}
         qs = []
         for index, (x,x2) in enumerate(zip(self.bins[:-1], self.bins[1:])):
-            zvariance = self.zvariance[index]
-            if index==index:
-                coreandoutlier = CoreAndOutlier(self.zmid, zbias=0, sigma_z=0.05*zvariance)
+            if index==idx:
+                core = Core(self.zmid, zbias=self.zbias[index], sigma_z=0.05*self.zvariance[index]*zvar)
             else:
-                coreandoutlier = CoreAndOutlier(self.zmid, zbias=0, sigma_z=0.05)
+                core = Core(self.zmid, zbias=self.zbias[index], sigma_z=0.05*self.zvariance[index])
             tomofilter = uniform.pdf(self.zmid, loc=x, scale=x2-x)
-            photoz_model = PhotozModel(pdf_z, coreandoutlier, [tomofilter])
+            photoz_model = PhotozModel(pdf_z, core, [tomofilter])
             dNdz_dict_source[self.bin_centers[index]] = photoz_model.get_pdf()[0]
             f = CubicSpline(self.zmid, dNdz_dict_source[self.bin_centers[index]])
             qs.append(quad(f, 0, 4)[0])
-        return self._NormalizePZ(qs, dNdz_dict_source)
+
+        inbin = [0.03]*5
+        for index in range(len(self.bins)-1):
+            inbin[index] = inbin[index]*self.outliers[index]
+        norm = 1 - sum(inbin)
+
+        dNdz_dict_source = self._NormalizePZ(qs, dNdz_dict_source, 5/norm)
+        
+        for i, b in enumerate(list(sorted(self.dNdz_dict_source.keys()))):
+            dNdz_dict_source[b] += self.scores[i]*inbin[i]
+        return dNdz_dict_source
 
     def getC_ellOfzvariance1(self, zvariance):
         index = 0
-        dNdz_dict_source = self._variance_helper(index)
+        dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
 
     def getC_ellOfzvariance2(self, zvariance):
         index = 1
-        dNdz_dict_source = self._variance_helper(index)
+        dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
 
 
     def getC_ellOfzvariance3(self, zvariance):
         index = 2
-        dNdz_dict_source = self._variance_helper(index)
+        dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
 
 
     def getC_ellOfzvariance4(self, zvariance):
         index = 3
-        dNdz_dict_source = self._variance_helper(index)
+        dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
 
 
     def getC_ellOfzvariance5(self, zvariance):
         index = 4
-        dNdz_dict_source = self._variance_helper(index)
+        dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
 
 
