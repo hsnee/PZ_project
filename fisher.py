@@ -208,8 +208,24 @@ class PhotozModel(object):
 
         return pdf_zp
 
+def centroid_shift(unbiased, biased):
+    cl_unbiased = unbiased.C_ell
+    cl_biased = biased.C_ell
+    
+    diff_cl = np.column_stack((np.array(cl_biased)[:, 0], np.array(cl_biased)[:, 1:] - np.array(cl_unbiased)[:, 1:]))
+    bias_vec = []
+    for i, param in enumerate(unbiased.param_order[:7]):
+        bias_vec.append(sum(diff_cl[idx].dot(
+                invcov_list[idx].dot(derivs_sig[param][idx])
+                ) for idx in range(len(ell))))
+    bias_vec = np.array(bias_vec)
+    para_bias = np.linalg.inv(fisher).dot(bias_vec) 
+    para_bias = {param_order[i]: para_bias[i] for i in range(7)}
+    return para_bias
+    
+def get_bias_z_pdf_comp(para, diff_cl, lvals):
 
-
+    return bias
 
 
 def FullPlot(params, *args, labels='LongString'):
@@ -399,6 +415,7 @@ class Fisher:
 
         lst = list(self.dNdz_dict_source.keys())
         for i, key in enumerate(lst):
+            ia = self.getAi(1, self.beta, cosmo) * self.A0 * self.A_l(z) * self.A_h(z)
             lens1 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[key]))
             for keyj in lst[i:]:
                 lens2 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[keyj]))
@@ -561,6 +578,8 @@ class Fisher:
         for i, b in enumerate(list(sorted(self.dNdz_dict_source.keys()))):
             dNdz_dict_source[b] += self.scores[i]*inbin[i]
         return dNdz_dict_source
+    
+
 
     def getC_ellOfzoutlier1(self, zoutlier):
         index = 0
