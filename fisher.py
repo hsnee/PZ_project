@@ -223,9 +223,6 @@ def centroid_shift(unbiased, biased):
     para_bias = {param_order[i]: para_bias[i] for i in range(7)}
     return para_bias
     
-def get_bias_z_pdf_comp(para, diff_cl, lvals):
-
-    return bias
 
 
 def FullPlot(params, *args, labels='LongString'):
@@ -265,6 +262,9 @@ class Fisher:
         self.zbias = zbias
         self.outliers = outliers
         self.has_run = False
+        self.A0 = 5
+        self.beta = 0
+        self.eta = 0
         self.calcCov = calcCov
         self.plot_label = plot_label
         self.cosmo = cosmo
@@ -290,7 +290,11 @@ class Fisher:
             'zoutlier2': self.getC_ellOfzoutlier2,
             'zoutlier3': self.getC_ellofzoutlier3,
             'zoutlier4': self.getC_ellOfzoutlier4,
-            'zoutlier5': self.getC_ellofzoutlier5
+            'zoutlier5': self.getC_ellofzoutlier5,
+            'A0': self.getC_ellOfIA_amp,
+            'beta': self.getC_ellOfIA_beta,
+            'etal': self.getC_ellOfIA_etal,
+            'etah': self.getC_ellOfIA_etah
 
         }
         self.vals = {
@@ -301,6 +305,10 @@ class Fisher:
             'omega_m': 0.3156,
             'w_0': -1,
             'w_a': 0,
+            'A0': 5,
+            'etal':0,
+            'etah': 0
+            'beta':0
         }
         for i in range(5):
             self.vals['zbias'+str(i+1)] = 0
@@ -329,9 +337,13 @@ class Fisher:
             'zoutlier3': 1/2**2,
             'zoutlier4': 1/2**2,
             'zoutlier5': 1/2**2,
+            'A0': 1/2**2,
+            'beta': 1/2**2,
+            'etal': 1/2**2,
+            'etah': 1/2**2
         }
-        self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)] + ['zoutlier'+str(i) for i in range(1,6)]
-        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)]
+        self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h', 'A0', 'beta', 'etal', 'etah'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)] + ['zoutlier'+str(i) for i in range(1,6)]
+        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$', r'$A_0$', r'$\beta$', r'$\eta_l$', r'$\eta_h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)]
         
         
     def __repr__(self):
@@ -404,6 +416,15 @@ class Fisher:
         ell = pd.read_csv(file, names=['ell'])
         self.ell = list(ell.to_dict()['ell'].values())[:15]
         
+    def A_h(self, z, etah):
+        if z>2:
+            return (1+z)**etah
+        return 1
+
+        
+    def A_l(self, z, etal):
+        return (1+z)**etal
+        
     
     def makeCells(self, cosmo=None):
         print('making C_ells')
@@ -412,13 +433,15 @@ class Fisher:
         ccl_cls = pd.DataFrame()
         zbin = 0
         j = 0
-
+        ia0 = self.A0 * np.array([self.A_l(zi, self.etal) for zi in self.zmid]) * np.array([self.A_h(zi, self.etah) for zi in self.zmid])
         lst = list(self.dNdz_dict_source.keys())
         for i, key in enumerate(lst):
-            ia = self.getAi(1, self.beta, cosmo) * self.A0 * self.A_l(z) * self.A_h(z)
-            lens1 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[key]))
+            
+            ia = self.getAi(self.beta, cosmo, (self.zmid, self.dNdz_dict_source[key])) * ia0
+            lens1 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[key]), ia_bias=(self.zmid, ia))
             for keyj in lst[i:]:
-                lens2 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[keyj]))
+                ia = self.getAi(self.beta, cosmo, (self.zmid, self.dNdz_dict_source[keyj])) * ia0
+                lens2 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[keyj]), , ia_bias=(self.zmid, ia))
                 cls = ccl.angular_cl(cosmo, lens1, lens2, self.ell)
                 newdf = pd.DataFrame({'zbin': [int(k) for k in j*np.ones(len(cls))],
                                       'ell': self.ell,
@@ -552,6 +575,103 @@ class Fisher:
         self.sampler.reset()
         self.sampler.run_mcmc(self.pos, nsteps, rstate0=self.state)
         
+        
+        
+    def getAi(beta, cosmo, dndz, Mr_s=-20.70, Q=1.23, alpha_lum=-1.23, phi_0=0.0094, P=-0.3, mlim=25.3, Lp= 1.):
+        """ Get the amplitude of the 2-halo part of w_{l+}
+        A0 is the amplitude, beta is the power law exponent (see Krause et al. 2016) 
+        cosmo is a CCL cosmology object 
+        Lp is a pivot luminosity (default = 1)
+        dndz is (z, dNdz) - vector of z and dNdz for the galaxies
+        (does not need to be normalised) 
+        """
+
+        z_input, dNdz = dndz
+
+        (z_k, kcorr, x,x,x) = np.loadtxt('kcorr.dat', unpack=True)
+        (z_e, ecorr, x,x,x) = np.loadtxt('ecorr.dat', unpack=True)
+        zmaxke = min(max(z_k), max(z_e))
+        zminke = max(min(z_k), min(z_e))
+        if (zminke>min(z_input) and zmaxke<max(z_input)):
+            z = np.linspace(zminke, zmaxke, 1000)
+            interp_dNdz = scipy.interpolate.interp1d(z_input, dNdz)
+            dNdz = interp_dNdz(z)
+        elif (zmaxke<max(z_input)):
+            z = np.linspace(min(z_input), zmaxke, 1000)
+            interp_dNdz = scipy.interpolate.interp1d(z_input, dNdz)
+            dNdz = interp_dNdz(z)
+        elif (zminke>min(z_input)):
+            z = np.linspace(zminke, max(z_input), 1000)
+            interp_dNdz = scipy.interpolate.interp1d(z_input, dNdz)
+            dNdz = interp_dNdz(z)
+        else:
+            z = z_input
+
+        # Get the luminosity function
+        (L, phi_normed) = get_phi(z, cosmo, Mr_s, Q, alpha_lum, phi_0, P, mlim)
+        # Pivot luminosity:
+        Lp = 1.
+
+        # Get Ai as a function of lens redshift.
+        Ai_ofzl = np.zeros(len(z))
+        for zi in range(len(z)):
+            Ai_ofzl[zi] = scipy.integrate.simps(np.asarray(phi_normed[zi]) * (np.asarray(L[zi]) / Lp)**(beta), np.asarray(L[zi]))
+
+        # Integrate over dNdz
+        Ai = scipy.integrate.simps(Ai_ofzl * dNdz, z) / scipy.integrate.simps(dNdz, z)
+
+        return Ai
+
+    def get_phi(z, cosmo, Mr_s, Q, alpha_lum, phi_0, P, mlim, Mp=-22.):
+
+        """ This function outputs the Schechter luminosity function with parameters fit in Loveday 2012, following the same procedure as Krause et al. 2015, as a function of z and L 
+        The output is L[z][l], list of vectors of luminosity values in z, different at each z due to the different lower luminosity limit, and phi[z][l], a list of luminosity functions at these luminosity vectors, at each z
+        cosmo is a CCL cosmology object
+        mlim is the magnitude limit of the survey
+        Mp is the pivot absolute magnitude.
+        other parameteres are the parameters of the luminosity function that are different for different samples, e.g. red vs all. lumparams = [Mr_s, Q, alpha_lum, phi_0, P]
+        Note that the luminosity function is output normalized (appropriate for getting Ai)."""
+
+        # Get the amplitude of the Schechter luminosity function as a function of redshift.
+        phi_s = phi_0 * 10.**(0.4 * P * z)
+
+        # Get M_* (magnitude), then convert to L_*
+        Ms = Mr_s - Q * (z - 0.1)
+        Ls = 10**(-0.4 * (Ms - Mp))
+
+        # Import the kcorr and ecorr correction from Poggianti (assumes elliptical galaxies)
+        # No data for sources beyon z = 3, so we keep the same value at higher z as z=3
+        (z_k, kcorr, x,x,x) = np.loadtxt('kcorr.dat', unpack=True)
+        (z_e, ecorr, x,x,x) = np.loadtxt('ecorr.dat', unpack=True)
+        kcorr_interp = scipy.interpolate.interp1d(z_k, kcorr)
+        ecorr_interp = scipy.interpolate.interp1d(z_e, ecorr)
+        kcorr = kcorr_interp(z)
+        ecorr = ecorr_interp(z)
+
+        # Get the absolute magnitude and luminosity corresponding to limiting apparent magntiude (as a function of z)
+        dl = ccl.luminosity_distance(cosmo, 1./(1.+z))
+        Mlim = mlim - (5. * np.log10(dl) + 25. + kcorr + ecorr)
+        Llim = 10.**(-0.4 * (Mlim-Mp))
+
+        L = [0]*len(z)
+        for zi in range(0, len(z)):
+            L[zi] = scipy.logspace(np.log10(Llim[zi]), 2., 1000)
+
+        # Now get phi(L,z), where this exists for each z because the lenghts of the L vectors are different.
+        phi_func = [0]*len(z)
+        for zi in range(0, len(z)):
+            phi_func[zi]= np.zeros(len(L[zi]))
+            for li in range(0, len(L[zi])):
+                phi_func[zi][li] = phi_s[zi] * (L[zi][li] / Ls[zi]) ** (alpha_lum) * np.exp(- L[zi][li] / Ls[zi])
+
+        norm = np.zeros(len(z))
+        phi_func_normed = [0]*len(z)
+        for zi in range(len(z)):
+            norm[zi] = scipy.integrate.simps(phi_func[zi], L[zi])
+            phi_func_normed[zi] = phi_func[zi] / norm[zi]
+
+        return (L, phi_func_normed)
+        
     def _outlier_helper(self, idx, zoutlier):
         pdf_z = SmailZ(self.zmid, np.array(self.dneff))
         dNdz_dict_source = {}
@@ -631,7 +751,19 @@ class Fisher:
         for i, b in enumerate(list(sorted(self.dNdz_dict_source.keys()))):
             dNdz_dict_source[b] += self.scores[i]*inbin[i]
         return dNdz_dict_source
-
+    
+    
+    def getC_ellOfIA_amp(self, A0):
+        return self._helper(self.cosmo, self.dNdz_dict_source, A0=A0)
+        
+    def getC_ellOfIA_highz(self, etah):
+        return self._helper(self.cosmo, self.dNdz_dict_source, eta=etah)
+        
+    def getC_ellOfIA_lowz(self, etal):
+        return self._helper(self.cosmo, self.dNdz_dict_source, eta=etal)
+        
+    def getC_ellOfIA_beta(self, beta):
+        return self._helper(self.cosmo, self.dNdz_dict_source, beta=beta)
 
     def getC_ellOfzbias1(self, zbias):
         index = 0
@@ -694,30 +826,37 @@ class Fisher:
         dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
 
-
     def getC_ellOfzvariance3(self, zvariance):
         index = 2
         dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
-
 
     def getC_ellOfzvariance4(self, zvariance):
         index = 3
         dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
 
-
     def getC_ellOfzvariance5(self, zvariance):
         index = 4
         dNdz_dict_source = self._variance_helper(index, zvariance)
         return self._helper(self.cosmo, dNdz_dict_source)
 
-
-
-    def _helper(self, cosmo, dNdz_dict_source):
+    def _helper(self, cosmo, dNdz_dict_source, A0=None, beta=None, eta=None):
+        if not beta:
+            beta = self.beta
+        if not eta:
+            etal = self.etal
+        if not etah:
+            etah = self.etah
+        if not A0:
+            A0 = self.A0
+        ia0 =  self.A0 * np.array([self.A_l(zi, etal) for zi in self.zmid]) * np.array([self.A_h(zi, etah) for zi in self.zmid])
+        ia = self.getAi(self.beta, cosmo, (self.zmid, self.dNdz_dict_source[key])) * ia0
         lens1 = ccl.WeakLensingTracer(cosmo, dndz=(self.z[1:], dNdz_dict_source[self.key]))
+        ia = self.getAi(self.beta, cosmo, (self.zmid, self.dNdz_dict_source[keyj])) * ia0
         lens2 = ccl.WeakLensingTracer(cosmo, dndz=(self.z[1:], dNdz_dict_source[self.keyj]))
         return ccl.angular_cl(cosmo, lens1, lens2, self.ell)
+    
 
     def getC_ellOfSigma8(self, sigma8):
         cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=sigma8, n_s=0.9645, 
