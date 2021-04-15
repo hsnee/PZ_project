@@ -210,15 +210,15 @@ class PhotozModel(object):
         return pdf_zp
 
 def centroid_shift(unbiased, biased):
-    cl_unbiased = unbiased.C_ell
-    cl_biased = biased.C_ell
+    cl_unbiased = np.array(unbiased.ccl_cls['C_ell']).reshape(15, 15).T 
+    cl_biased = np.array(biased.ccl_cls['C_ell']).reshape(15, 15).T 
     
-    diff_cl = np.column_stack((np.array(cl_biased)[:, 0], np.array(cl_biased)[:, 1:] - np.array(cl_unbiased)[:, 1:]))
+    diff_cl = np.column_stack(cl_biased - cl_unbiased)
     bias_vec = []
-    for i, param in enumerate(unbiased.param_order[:7]):
+    for i, param in enumerate(unbiased.param_order):
         bias_vec.append(sum(diff_cl[idx].dot(
-                invcov_list[idx].dot(derivs_sig[param][idx])
-                ) for idx in range(len(ell))))
+                np.array(unbiased.invcov_list[idx]).dot(unbiased.derivs_sig[param][idx])
+                ) for idx in range(len(unbiased.ell))))
     bias_vec = np.array(bias_vec)
     para_bias = np.linalg.inv(fisher).dot(bias_vec) 
     para_bias = {param_order[i]: para_bias[i] for i in range(7)}
@@ -264,9 +264,11 @@ class Fisher:
         self.outliers = outliers
         self.has_run = False
         self.A0 = 5
-        self.beta = 0
+        self.intCache = {}
+        self.beta = 1
         self.etal = 0
         self.etah = 0
+        self.IA_interp = pickle.load(open('IA_interp.p', 'rb'))
         self.calcCov = calcCov
         self.plot_label = plot_label
         self.cosmo = cosmo
@@ -438,10 +440,10 @@ class Fisher:
         ia0 = self.A0 * np.array([self.A_l(zi, self.etal) for zi in self.zmid]) * np.array([self.A_h(zi, self.etah) for zi in self.zmid])
         lst = list(self.dNdz_dict_source.keys())
         for i, key in enumerate(lst):
-            ia = self.getAi(self.beta, cosmo, dndz=(tuple(self.zmid), tuple(self.dNdz_dict_source[key]))) * ia0
+            ia = self.getAi(self.beta, cosmo, dNdz=tuple(self.dNdz_dict_source[key])) * ia0
             lens1 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[key]), ia_bias=(self.zmid, ia))
             for keyj in lst[i:]:
-                ia = self.getAi(self.beta, cosmo, dndz=(tuple(self.zmid), tuple(self.dNdz_dict_source[keyj]))) * ia0
+                ia = self.getAi(self.beta, cosmo, dNdz=tuple(self.dNdz_dict_source[keyj])) * ia0
                 lens2 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[keyj]), ia_bias=(self.zmid, ia))
                 cls = ccl.angular_cl(cosmo, lens1, lens2, self.ell)
                 newdf = pd.DataFrame({'zbin': [int(k) for k in j*np.ones(len(cls))],
@@ -514,7 +516,6 @@ class Fisher:
                     self.keyj = keyj
                     f = nd.Derivative(self.funcs[var], full_output=True, step=0.01)
                     val, info = f(self.vals[var])
-                    print(val)
                     derivs.append(val)
             self.derivs_sig[var] = np.array(derivs).T
             
@@ -575,8 +576,8 @@ class Fisher:
         self.sampler.reset()
         self.sampler.run_mcmc(self.pos, nsteps, rstate0=self.state)
         
-    @lru_cache
-    def getAi(self, beta, cosmo, dndz, Mr_s=-20.70, Q=1.23, alpha_lum=-1.23, phi_0=0.0094, P=-0.3, mlim=25.3, Lp= 1.):
+#    @lru_cache
+    def getAi(self, beta, cosmo, dNdz, Mr_s=-20.70, Q=1.23, alpha_lum=-1.23, phi_0=0.0094, P=-0.3, mlim=25.3, Lp= 1.):
         """ Get the amplitude of the 2-halo part of w_{l+}
         A0 is the amplitude, beta is the power law exponent (see Krause et al. 2016) 
         cosmo is a CCL cosmology object 
@@ -584,37 +585,21 @@ class Fisher:
         dndz is (z, dNdz) - vector of z and dNdz for the galaxies
         (does not need to be normalised) 
         """
-        z_input, dNdz = dndz
-        z_input = list(z_input)
+        z_input = self.zmid
         dNdz = list(dNdz)
-        (z_k, kcorr, x,x,x) = np.loadtxt('kcorr.dat', unpack=True)
-        (z_e, ecorr, x,x,x) = np.loadtxt('ecorr.dat', unpack=True)
-        zmaxke = min(max(z_k), max(z_e))
-        zminke = max(min(z_k), min(z_e))
-        if (zminke>min(z_input) and zmaxke<max(z_input)):
-            z = np.linspace(zminke, zmaxke, 1000)
-            interp_dNdz = scipy.interpolate.interp1d(z_input, dNdz)
-            dNdz = interp_dNdz(z)
-        elif (zmaxke<max(z_input)):
-            z = np.linspace(min(z_input), zmaxke, 1000)
-            interp_dNdz = scipy.interpolate.interp1d(z_input, dNdz)
-            dNdz = interp_dNdz(z)
-        elif (zminke>min(z_input)):
-            z = np.linspace(zminke, max(z_input), 1000)
-            interp_dNdz = scipy.interpolate.interp1d(z_input, dNdz)
-            dNdz = interp_dNdz(z)
-        else:
-            z = z_input
+        z = np.array(z_input)
 
         # Get the luminosity function
-        (L, phi_normed) = self.get_phi(z, self.cosmo, Mr_s, Q, alpha_lum, phi_0, P, mlim)
+        (L, phi_normed) = self.get_phi(z, cosmo, Mr_s, Q, alpha_lum, phi_0, P, mlim)
         # Pivot luminosity:
         Lp = 1.
 
         # Get Ai as a function of lens redshift.
-        Ai_ofzl = np.zeros(len(z))
-        for zi in range(len(z)):
-            Ai_ofzl[zi] = scipy.integrate.simps(np.asarray(phi_normed[zi]) * (np.asarray(L[zi]) / Lp)**(beta), np.asarray(L[zi]))
+        if beta == 1:
+            dl = ccl.luminosity_distance(cosmo, 1./(1.+z))
+            Ai_ofzl = self.IA_interp(dl)
+        else:
+            Ai_ofzl = np.array([scipy.integrate.simps(np.asarray(phi_normed[zi]) * (np.asarray(L[zi]) / Lp)**(beta), np.asarray(L[zi])) for zi in range(len(z))])
 
         # Integrate over dNdz
         Ai = scipy.integrate.simps(Ai_ofzl * dNdz, z) / scipy.integrate.simps(dNdz, z)
@@ -642,8 +627,8 @@ class Fisher:
         # No data for sources beyon z = 3, so we keep the same value at higher z as z=3
         (z_k, kcorr, x,x,x) = np.loadtxt('kcorr.dat', unpack=True)
         (z_e, ecorr, x,x,x) = np.loadtxt('ecorr.dat', unpack=True)
-        kcorr_interp = scipy.interpolate.interp1d(z_k, kcorr)
-        ecorr_interp = scipy.interpolate.interp1d(z_e, ecorr)
+        kcorr_interp = CubicSpline(z_k, kcorr)
+        ecorr_interp = CubicSpline(z_e, ecorr)
         kcorr = kcorr_interp(z)
         ecorr = ecorr_interp(z)
 
@@ -652,16 +637,13 @@ class Fisher:
         Mlim = mlim - (5. * np.log10(dl) + 25. + kcorr + ecorr)
         Llim = 10.**(-0.4 * (Mlim-Mp))
 
-        L = [0]*len(z)
-        for zi in range(0, len(z)):
-            L[zi] = scipy.logspace(np.log10(Llim[zi]), 2., 1000)
+
+        L = [scipy.logspace(np.log10(Llim[zi]), 2., 1000) for zi in range(len(z))]
 
         # Now get phi(L,z), where this exists for each z because the lenghts of the L vectors are different.
         phi_func = [0]*len(z)
-        for zi in range(0, len(z)):
-            phi_func[zi]= np.zeros(len(L[zi]))
-            for li in range(0, len(L[zi])):
-                phi_func[zi][li] = phi_s[zi] * (L[zi][li] / Ls[zi]) ** (alpha_lum) * np.exp(- L[zi][li] / Ls[zi])
+        for zi in range(len(z)):
+            phi_func[zi] = [phi_s[zi] * (L[zi][li] / Ls[zi]) ** (alpha_lum) * np.exp(- L[zi][li] / Ls[zi]) for li in range(len(L[zi]))]
 
         norm = np.zeros(len(z))
         phi_func_normed = [0]*len(z)
@@ -674,12 +656,12 @@ class Fisher:
     def _outlier_helper(self, idx, zoutlier):
         dNdz_dict_source = {}
         qs = []
-        for index, (x,x2) in enumerate(zip(bins[:-1], bins[1:])):
+        for index, (x,x2) in enumerate(zip(self.bins[:-1], self.bins[1:])):
             core = Core(self.zmid, zbias=0.1*self.zbias[index], sigma_z=self.zvariance[index]*0.05)
             tomofilter = uniform.pdf(self.zmid, loc=x, scale=x2-x)
             photoz_model = PhotozModel(self.pdf_z, core, [tomofilter])
-            dNdz_dict_source[bin_centers[index]] = photoz_model.get_pdf()[0]
-            f = CubicSpline(self.zmid, dNdz_dict_source[bin_centers[index]])
+            dNdz_dict_source[self.bin_centers[index]] = photoz_model.get_pdf()[0]
+            f = CubicSpline(self.zmid, dNdz_dict_source[self.bin_centers[index]])
             qs.append(quad(f, 0, 4)[0])
 
         inbin = [0.03]*5
@@ -844,11 +826,9 @@ class Fisher:
         if not A0:
             A0 = self.A0
         ia0 =  A0 * np.array([self.A_l(zi, etal) for zi in self.zmid]) * np.array([self.A_h(zi, etah) for zi in self.zmid])
-        print(ia0)
-        ia = self.getAi(beta, cosmo, dndz=(tuple(self.zmid), tuple(dNdz_dict_source[self.key]))) * ia0
-        print(ia)
+        ia = self.getAi(beta, cosmo, dNdz=tuple(dNdz_dict_source[self.key])) * ia0
         lens1 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, dNdz_dict_source[self.key]), ia_bias=(self.zmid, ia))
-        ia = self.getAi(beta, cosmo, dndz=(tuple(self.zmid), tuple(dNdz_dict_source[self.keyj]))) * ia0
+        ia = self.getAi(beta, cosmo, dNdz=tuple(dNdz_dict_source[self.keyj])) * ia0
         lens2 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, dNdz_dict_source[self.keyj]), ia_bias=(self.zmid, ia))
         return ccl.angular_cl(cosmo, lens1, lens2, self.ell)
     
