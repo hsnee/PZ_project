@@ -372,7 +372,7 @@ class Fisher:
         
     
     def _makeSourcePZ(self, file='nzdist.txt', implement_outliers=True):
-        print('Making Source Photo-z')
+        # print('Making Source Photo-z')
         df = pd.read_csv(file, sep=' ') 
         self.zmid = list(df['zmid'])
         self.dneff = df['dneff']
@@ -460,6 +460,21 @@ class Fisher:
             C_ells.append(list(self.ccl_cls[self.ccl_cls['zbin']==i]['C_ell']))
         return C_ells
 
+    def makeEmceeCells(self, cosmo):
+        C_ells = []
+        lst = list(self.dNdz_dict_source.keys())
+        ia0 = self.A0 * np.array([self.A_l(zi, self.etal) for zi in self.zmid]) * np.array([self.A_h(zi, self.etah) for zi in self.zmid])
+        for i, key in enumerate(lst):
+            ia = self.getAi(self.beta, cosmo, dNdz=tuple(self.dNdz_dict_source[key])) * ia0
+            lens1 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[key]), ia_bias=(self.zmid, ia))
+            for keyj in lst[i:]:
+                ia = self.getAi(self.beta, cosmo, dNdz=tuple(self.dNdz_dict_source[keyj])) * ia0
+                lens2 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[keyj]), ia_bias=(self.zmid, ia))
+                cls = ccl.angular_cl(cosmo, lens1, lens2, self.ell)
+                C_ells.append(cls)
+
+        return C_ells
+    
     def _makeShearShearCells(self):
         pass
 
@@ -596,9 +611,11 @@ class Fisher:
 
         # Get Ai as a function of lens redshift.
         if beta == 1:
+            #print('no integration')
             dl = ccl.luminosity_distance(cosmo, 1./(1.+z))
             Ai_ofzl = self.IA_interp(dl)
         else:
+            #print('integrating')
             Ai_ofzl = np.array([scipy.integrate.simps(np.asarray(phi_normed[zi]) * (np.asarray(L[zi]) / Lp)**(beta), np.asarray(L[zi])) for zi in range(len(z))])
 
         # Integrate over dNdz
