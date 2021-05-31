@@ -213,7 +213,7 @@ def centroid_shift(unbiased, biased):
     cl_unbiased = np.array(unbiased.ccl_cls['C_ell']).reshape(15, 15).T 
     cl_biased = np.array(biased.ccl_cls['C_ell']).reshape(15, 15).T 
     
-    diff_cl = np.column_stack(cl_biased - cl_unbiased)
+    diff_cl = cl_biased - cl_unbiased
     bias_vec = []
     for i, param in enumerate(unbiased.param_order):
         bias_vec.append(sum(diff_cl[idx].dot(
@@ -268,10 +268,15 @@ class Fisher:
         self.beta = 1
         self.etal = 0
         self.etah = 0
-        self.IA_interp = pickle.load(open('IA_interp.p', 'rb'))
+        self.gbias = [1.9]*10
+        #self.IA_interp = pickle.load(open('IA_interp.p', 'rb'))
         self.calcCov = calcCov
         self.plot_label = plot_label
         self.cosmo = cosmo
+        df = pd.read_csv('nzdist.txt', sep=' ') 
+        self.zmid = list(df['zmid'])
+        self.dneff = df['dneff']
+        self.z = [0] + self.zmid
         self.funcs = {
             'sigma_8': self.getC_ellOfSigma8,
             'omega_b': self.getC_ellOfOmegab,
@@ -346,8 +351,11 @@ class Fisher:
             'etal': 1/2**2,
             'etah': 1/2**2
         }
-        self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h', 'A0', 'beta', 'etal', 'etah'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)] + ['zoutlier'+str(i) for i in range(1,6)]
-        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$', r'$A_0$', r'$\beta$', r'$\eta_l$', r'$\eta_h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)]
+        for i in range(10):
+            string = 'gbias'+str(i+1)
+            self.priors[string] = 1/0.9**2
+        self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h', 'A0', 'beta', 'etal', 'etah'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)] + ['zoutlier'+str(i) for i in range(1,6)] + ['gbias'+str(i) for i in range(1,6)]
+        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$', r'$A_0$', r'$\beta$', r'$\eta_l$', r'$\eta_h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)] + [rf'$b_g^{i}' for i in range(1.6)]
         
         
     def __repr__(self):
@@ -359,7 +367,20 @@ class Fisher:
                 - outliers: {[o*0.03 for o in self.outliers]}'
         
     def _makeLensPZ(self):
-        raise NotImplemented('Lens distributions not implemented yet.')
+        
+        bins = np.linspace(0.2, 1.2, 11)
+        self.bins = bins
+        self.bin_centers = [.5*fsum([bins[i]+bins[i+1]]) for i in range(len(bins[:-1]))]
+        self.pdf_z = SmailZ(self.zmid, np.array(self.dneff))
+        dNdz_dict_lens = {}
+        qs = []
+        for index, (x,x2) in enumerate(zip(bins[:-1], bins[1:])):
+            core = Core(self.zmid, zbias=0, sigma_z=0.03)
+            tomofilter = uniform.pdf(self.zmid, loc=x, scale=x2-x)
+            photoz_model = PhotozModel(self.pdf_z, core, [tomofilter])
+            dNdz_dict_lens[self.bin_centers[index]] = photoz_model.get_pdf()[0]
+        self.dNdz_dict_lens = dNdz_dict_lens
+        
         
     def _NormalizePZ(self, qs, dNdz_dict_source, m=1):
         for q, k in zip(qs, dNdz_dict_source.keys()):
@@ -371,12 +392,8 @@ class Fisher:
             return dNdz_dict_source
         
     
-    def _makeSourcePZ(self, file='nzdist.txt', implement_outliers=True):
+    def _makeSourcePZ(self, implement_outliers=True):
         # print('Making Source Photo-z')
-        df = pd.read_csv(file, sep=' ') 
-        self.zmid = list(df['zmid'])
-        self.dneff = df['dneff']
-        self.z = [0] + self.zmid
         n = len(self.zmid)
         datapts = ([list(np.ones(int(self.dneff[i]/min(self.dneff)))*self.zmid[i]) for i in range(n)])
         datapts = list(chain.from_iterable(datapts)) # flatten
@@ -430,8 +447,7 @@ class Fisher:
         return (1+z)**etal
         
     
-    def makeCells(self, cosmo=None):
-        print('making C_ells')
+    def makeShearShearCells(self, cosmo=None):
         if not cosmo:
             cosmo = self.cosmo
         ccl_cls = pd.DataFrame()
@@ -453,11 +469,79 @@ class Fisher:
                 j += 1
 
 
-        self.ccl_cls = ccl_cls.reset_index()
+        self.shearshear_cls = ccl_cls.reset_index()
         
         C_ells = []
-        for i in set(self.ccl_cls['zbin']):
-            C_ells.append(list(self.ccl_cls[self.ccl_cls['zbin']==i]['C_ell']))
+        for i in set(ccl_cls['zbin']):
+            C_ells.append(list(ccl_cls[ccl_cls['zbin']==i]['C_ell']))
+        return C_ells
+    
+    def makePosPosCells(self, cosmo=None):
+        if not cosmo:
+            cosmo = self.cosmo
+        ccl_cls = pd.DataFrame()
+        zbin = 0
+        j = 0
+        lst = list(self.dNdz_dict_lens.keys())
+        for i, key in enumerate(lst):
+            pos1 = ccl.NumberCountsTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_lens[key]), has_rsd=False, bias=(self.zmid, self.gbias[i]*np.ones_like(self.zmid)))
+            cls = ccl.angular_cl(cosmo, pos1, pos1, self.ell)
+            newdf = pd.DataFrame({'zbin': [int(k) for k in i*np.ones(len(cls))],
+                                  'ell': self.ell,
+                                  'C_ell': cls})
+            ccl_cls = pd.concat((ccl_cls, newdf))
+
+
+        self.pospos_cls = ccl_cls.reset_index()
+        
+        C_ells = []
+        for i in set(ccl_cls['zbin']):
+            C_ells.append(list(ccl_cls[ccl_cls['zbin']==i]['C_ell']))
+        return C_ells
+
+
+    def makePosShearCells(self, cosmo=None):
+        if not cosmo:
+            cosmo = self.cosmo
+        ccl_cls = pd.DataFrame()
+        zbin = 0
+        j = 0
+        llst = list(self.dNdz_dict_lens.keys())
+        slst = list(self.dNdz_dict_source.keys())
+        accept = {(0,1), (0,2), (0,3), (0,4),
+                  (1,1), (1,2), (1,3), (1,4),
+                  (2,2), (2,3), (2,4),
+                  (3,2), (3,3), (3,4),
+                  (4,2), (4,3), (4,4),
+                  (5,3), (5,4),
+                  (6,3), (6,4),
+                  (7,3), (7,4),
+                  (8,4), 
+                  (9,4)
+                  }
+        for l, key in enumerate(llst):
+            pos = ccl.NumberCountsTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_lens[key]), has_rsd=False, bias=(self.zmid, self.gbias[i]*np.ones_like(self.zmid)))
+            for s, keyj in enumerate(slst):
+                if (l, s) not in accept:
+                    cls = np.zeros_like(self.ell)
+                else:
+                    ia0 = self.A0 * np.array([self.A_l(zi, self.etal) for zi in self.zmid]) * np.array([self.A_h(zi, self.etah) for zi in self.zmid])
+                    ia = self.getAi(self.beta, cosmo, dNdz=self.dNdz_dict_source[keyj]) * ia0
+                    shear = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_source[keyj]), ia_bias=(self.zmid, ia))
+                    cls = ccl.angular_cl(cosmo, pos, shear, self.ell)                
+
+                newdf = pd.DataFrame({'zbin': [int(o) for o in j*np.ones(len(cls))],
+                                      'ell': self.ell,
+                                      'C_ell': cls})
+                ccl_cls = pd.concat((ccl_cls, newdf))
+                j += 1
+
+
+        self.posshear_cls = ccl_cls.reset_index()
+        
+        C_ells = []
+        for i in set(ccl_cls['zbin']):
+            C_ells.append(list(ccl_cls[ccl_cls['zbin']==i]['C_ell']))
         return C_ells
 
     def makeEmceeCells(self, cosmo):
@@ -474,12 +558,6 @@ class Fisher:
                 C_ells.append(cls)
 
         return C_ells
-    
-    def _makeShearShearCells(self):
-        pass
-
-    def _makePosPosCells(self):
-        pass
     
     def buildCovMatrix(self):
         print('Getting covariance matrix')
@@ -544,7 +622,9 @@ class Fisher:
         for i, var1 in enumerate(self.param_order[:end]):
             for j, var2 in enumerate(self.param_order[:end]):
                 res = [self.derivs_sig[var1][l].T @ self.invcov_list[l] @ self.derivs_sig[var2][l] for l in range(len(self.derivs_sig[var1]))]
-                self.fisher[i][j] = sum(res)*400
+                self.fisher[i][j] = sum(res)
+                if self.calcCov:
+                    self.fisher[i][j] *= len(self.ell)**2
         for i in range(end):
             self.fisher[i][i] += self.priors[self.param_order[i]]
         
