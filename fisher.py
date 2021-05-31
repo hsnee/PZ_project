@@ -268,8 +268,8 @@ class Fisher:
         self.beta = 1
         self.etal = 0
         self.etah = 0
-        self.gbias = [1.9]*10
-        #self.IA_interp = pickle.load(open('IA_interp.p', 'rb'))
+        self.gbias = [1.376695, 1.451179, 1.528404, 1.607983, 1.689579, 1.772899, 1.857700, 1.943754, 2.030887, 2.118943] 
+        self.IA_interp = pickle.load(open('IA_interp.p', 'rb'))
         self.calcCov = calcCov
         self.plot_label = plot_label
         self.cosmo = cosmo
