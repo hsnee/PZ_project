@@ -6,7 +6,7 @@ import matplotlib
 from math import fsum
 from functools import lru_cache
 from numpy.linalg import inv
-import sys, scipy, emcee
+import sys, scipy
 import numdifftools as nd
 from scipy.stats import uniform, norm
 from scipy.integrate import quad
@@ -277,35 +277,72 @@ class Fisher:
         self.zmid = list(df['zmid'])
         self.dneff = df['dneff']
         self.z = [0] + self.zmid
-        self.funcs = {
-            'sigma_8': self.getC_ellOfSigma8,
-            'omega_b': self.getC_ellOfOmegab,
-            'h': self.getC_ellOfh,
-            'n_s': self.getC_ellOfn_s,
-            'omega_m': self.getC_ellOfOmegam,
-            'w_0': self.getC_ellOfw0,
-            'w_a': self.getC_ellOfwa,
-            'zbias1': self.getC_ellOfzbias1,
-            'zbias2': self.getC_ellOfzbias2,
-            'zbias3': self.getC_ellOfzbias3,
-            'zbias4': self.getC_ellOfzbias4,
-            'zbias5': self.getC_ellOfzbias5,
-            'zvariance1': self.getC_ellOfzvariance1,
-            'zvariance2': self.getC_ellOfzvariance2,
-            'zvariance3': self.getC_ellOfzvariance3,
-            'zvariance4': self.getC_ellOfzvariance4,
-            'zvariance5': self.getC_ellOfzvariance5,
-            'zoutlier1': self.getC_ellOfzoutlier1,
-            'zoutlier2': self.getC_ellOfzoutlier2,
-            'zoutlier3': self.getC_ellOfzoutlier3,
-            'zoutlier4': self.getC_ellOfzoutlier4,
-            'zoutlier5': self.getC_ellOfzoutlier5,
-            'A0': self.getC_ellOfIA_amp,
-            'beta': self.getC_ellOfIA_beta,
-            'etal': self.getC_ellOfIA_lowz,
-            'etah': self.getC_ellOfIA_highz
-
+        self.funcs_ss = {
+            'sigma_8': self.getC_ellOfSigma8_ss,
+            'omega_b': self.getC_ellOfOmegab_ss,
+            'h': self.getC_ellOfh_ss,
+            'n_s': self.getC_ellOfn_s_ss,
+            'omega_m': self.getC_ellOfOmegam_ss,
+            'w_0': self.getC_ellOfw0_ss,
+            'w_a': self.getC_ellOfwa_ss,
+            'zbias1': self.getC_ellOfzbias1_ss,
+            'zbias2': self.getC_ellOfzbias2_ss,
+            'zbias3': self.getC_ellOfzbias3_ss,
+            'zbias4': self.getC_ellOfzbias4_ss,
+            'zbias5': self.getC_ellOfzbias5_ss,
+            'zvariance1': self.getC_ellOfzvariance1_ss,
+            'zvariance2': self.getC_ellOfzvariance2_ss,
+            'zvariance3': self.getC_ellOfzvariance3_ss,
+            'zvariance4': self.getC_ellOfzvariance4_ss,
+            'zvariance5': self.getC_ellOfzvariance5_ss,
+            'zoutlier1': self.getC_ellOfzoutlier1_ss,
+            'zoutlier2': self.getC_ellOfzoutlier2_ss,
+            'zoutlier3': self.getC_ellOfzoutlier3_ss,
+            'zoutlier4': self.getC_ellOfzoutlier4_ss,
+            'zoutlier5': self.getC_ellOfzoutlier5_ss,
+            'A0': self.getC_ellOfIA_amp_ss,
+            'beta': self.getC_ellOfIA_beta_ss,
+            'etal': self.getC_ellOfIA_lowz_ss,
+            'etah': self.getC_ellOfIA_highz_ss
         }
+        self.funcs_sp = {
+            'sigma_8': self.getC_ellOfSigma8_sp,
+            'omega_b': self.getC_ellOfOmegab_sp,
+            'h': self.getC_ellOfh_sp,
+            'n_s': self.getC_ellOfn_s_sp,
+            'omega_m': self.getC_ellOfOmegam_sp,
+            'w_0': self.getC_ellOfw0_sp,
+            'w_a': self.getC_ellOfwa_sp,
+            'zbias1': self.getC_ellOfzbias1_sp,
+            'zbias2': self.getC_ellOfzbias2_sp,
+            'zbias3': self.getC_ellOfzbias3_sp,
+            'zbias4': self.getC_ellOfzbias4_sp,
+            'zbias5': self.getC_ellOfzbias5_sp,
+            'zvariance1': self.getC_ellOfzvariance1_sp,
+            'zvariance2': self.getC_ellOfzvariance2_sp,
+            'zvariance3': self.getC_ellOfzvariance3_sp,
+            'zvariance4': self.getC_ellOfzvariance4_sp,
+            'zvariance5': self.getC_ellOfzvariance5_sp,
+            'zoutlier1': self.getC_ellOfzoutlier1_sp,
+            'zoutlier2': self.getC_ellOfzoutlier2_sp,
+            'zoutlier3': self.getC_ellOfzoutlier3_sp,
+            'zoutlier4': self.getC_ellOfzoutlier4_sp,
+            'zoutlier5': self.getC_ellOfzoutlier5_sp,
+            'A0': self.getC_ellOfIA_amp_sp,
+            'beta': self.getC_ellOfIA_beta_sp,
+            'etal': self.getC_ellOfIA_lowz_sp,
+            'etah': self.getC_ellOfIA_highz_sp
+        }
+        self.funcs_pp = {
+            'sigma_8': self.getC_ellOfSigma8_pp,
+            'omega_b': self.getC_ellOfOmegab_pp,
+            'h': self.getC_ellOfh_pp,
+            'n_s': self.getC_ellOfn_s_pp,
+            'omega_m': self.getC_ellOfOmegam_pp,
+            'w_0': self.getC_ellOfw0_pp,
+            'w_a': self.getC_ellOfwa_pp,
+        }
+
         self.vals = {
             'sigma_8': 0.831, 
             'omega_b': 0.049, 
@@ -323,6 +360,9 @@ class Fisher:
             self.vals['zbias'+str(i+1)] = 0
             self.vals['zvariance'+str(i+1)] = 1
             self.vals['zoutlier'+str(i+1)] = 1
+        for i in range(1,11):
+            self.funcs_pp['gbias'+str(i)] = self.getC_ellOfgbias_ss
+            self.vals['gbias'+str(i)] = self.gbias[i-1]
         self.priors = {
             'sigma_8': 1/0.14**2, 
             'omega_b': 1/0.006**2, 
@@ -354,8 +394,8 @@ class Fisher:
         for i in range(10):
             string = 'gbias'+str(i+1)
             self.priors[string] = 1/0.9**2
-        self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h', 'A0', 'beta', 'etal', 'etah'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)] + ['zoutlier'+str(i) for i in range(1,6)] + ['gbias'+str(i) for i in range(1,6)]
-        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$', r'$A_0$', r'$\beta$', r'$\eta_l$', r'$\eta_h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)] + [rf'$b_g^{i}' for i in range(1.6)]
+        self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h', 'A0', 'beta', 'etal', 'etah'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)] + ['zoutlier'+str(i) for i in range(1,6)] + ['gbias'+str(i) for i in range(1,11)]
+        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$', r'$A_0$', r'$\beta$', r'$\eta_l$', r'$\eta_h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)] + [rf'$b_g^{i}' for i in range(1,11)]
         
         
     def __repr__(self):
@@ -369,6 +409,7 @@ class Fisher:
     def _makeLensPZ(self):
         
         bins = np.linspace(0.2, 1.2, 11)
+        self.gbias_dict = {}
         self.bins = bins
         self.bin_centers = [.5*fsum([bins[i]+bins[i+1]]) for i in range(len(bins[:-1]))]
         self.pdf_z = SmailZ(self.zmid, np.array(self.dneff))
@@ -379,6 +420,7 @@ class Fisher:
             tomofilter = uniform.pdf(self.zmid, loc=x, scale=x2-x)
             photoz_model = PhotozModel(self.pdf_z, core, [tomofilter])
             dNdz_dict_lens[self.bin_centers[index]] = photoz_model.get_pdf()[0]
+            self.gbias_dict[self.bin_centers[index]] = self.gbias[index]
         self.dNdz_dict_lens = dNdz_dict_lens
         
         
@@ -435,7 +477,7 @@ class Fisher:
     def getElls(self, file='ell-values.txt'):
         print('Getting Ells')
         ell = pd.read_csv(file, names=['ell'])
-        self.ell = list(ell.to_dict()['ell'].values())[:15]
+        self.ell = list(ell.to_dict()['ell'].values())
         
     def A_h(self, z, etah):
         if z>2:
@@ -508,7 +550,7 @@ class Fisher:
         j = 0
         llst = list(self.dNdz_dict_lens.keys())
         slst = list(self.dNdz_dict_source.keys())
-        accept = {(0,1), (0,2), (0,3), (0,4),
+        self.accept = {(0,1), (0,2), (0,3), (0,4),
                   (1,1), (1,2), (1,3), (1,4),
                   (2,2), (2,3), (2,4),
                   (3,2), (3,3), (3,4),
@@ -522,7 +564,7 @@ class Fisher:
         for l, key in enumerate(llst):
             pos = ccl.NumberCountsTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_lens[key]), has_rsd=False, bias=(self.zmid, self.gbias[i]*np.ones_like(self.zmid)))
             for s, keyj in enumerate(slst):
-                if (l, s) not in accept:
+                if (l, s) not in self.accept:
                     cls = np.zeros_like(self.ell)
                 else:
                     ia0 = self.A0 * np.array([self.A_l(zi, self.etal) for zi in self.zmid]) * np.array([self.A_h(zi, self.etah) for zi in self.zmid])
@@ -578,14 +620,15 @@ class Fisher:
             for cov_l in self.cov_matrix_list:
                 self.invcov_list.append(np.linalg.inv(cov_l))
         else:
-            invcov_SRD = pd.read_csv('Y10_shear_shear_inv.txt', names=['a','b'], delimiter=' ')
+            invcov_SRD = pd.read_csv('Y10_3x2pt_inv.txt', names=['a','b'], delimiter=' ')
             matrix = np.array(invcov_SRD['b']).reshape(300, 300)
             total_ells = 20
             self.invcov_list = []
+            bin_pairs = 50
             for l in range(total_ells):
                 m = []
-                for k in range(15):
-                    m.append([matrix[k*20+l][i*20+l] for i in range(15)])
+                for k in range(bin_pairs):
+                    m.append([matrix[k*20+l][i*20+l] for i in range(bin_pairs)])
                 self.invcov_list.append(m)
 
         
@@ -595,26 +638,51 @@ class Fisher:
             end = 7
         else:
             end = len(self.param_order)
-        dNdz_dict_source = self.dNdz_dict_source
         self.derivs_sig = {}
-        for var in list(self.funcs.keys())[:end]:
+        for var in self.param_order[:end]:
             print(var)
             zbin = 0
             j = 0
-            derivs = []
-            lst = list(self.dNdz_dict_source.keys())
-            for i, key in enumerate(lst):    
-                for keyj in lst[i:]:
+            derivs1, derivs2, derivs3 = [], [], []
+            slst = list(self.dNdz_dict_source.keys())
+            llst = list(self.dNdz_dict_lens.keys())
+            if var not in self.funcs_ss.keys():
+                derivs1 = np.zeros_like(self.ShearShearFid).T
+            else:
+                for i, key in enumerate(lst):    
+                    for keyj in lst[i:]:
+                        self.key = key
+                        self.keyj = keyj
+                        f = nd.Derivative(self.funcs_ss[var], full_output=True, step=0.01)
+                        val, info = f(self.vals[var])
+                        derivs1.append(val)
+                        derivs1 = np.array(derivs1)
+            if var not in self.funcs_sp.keys():
+                derivs2 = np.zeros_like(self.PosShearFid).T
+            else:
+                for l, keyl in enumerate(llst):
+                    for s, keys in enumerate(slst):
+                        if (l, s) in self.accept:
+                            self.keyl = keyl
+                            self.keys = keys 
+                            f = nd.Derivative(self.funcs_sp[var], full_output=True, step=0.01)
+                            val, info = f(self.vals[var])
+                            derivs2.append(val)
+                            derivs2 = np.array(derivs2) 
+            if var not in self.funcs_pp.keys():
+                derivs3 = np.zeros_like(self.PosPosFid)
+            else:
+                for i, key in enumerate(llst):
                     self.key = key
-                    self.keyj = keyj
-                    f = nd.Derivative(self.funcs[var], full_output=True, step=0.01)
+                    f = nd.Derivative(self.funcs_pp[var], full_output=True, step=0.01)
                     val, info = f(self.vals[var])
-                    derivs.append(val)
-            self.derivs_sig[var] = np.array(derivs).T
+                    derivs3.append(val)
+                    derivs3 = np.array(derivs3)
+            self.derivs_sig[var] = np.vstack((derivs1, derivs2, derivs3)).T
             
     def getFisher(self, cosmo=True):
         print('Building fisher matrix')
-        if cosmo:
+        if cosmo:[]
             end = 7
         else:
             end = len(self.param_order)
@@ -631,45 +699,16 @@ class Fisher:
     def process(self, cosmo=False):
         self._makeSourcePZ()
         self.getElls()
-        _ = self.makeCells()
+        self.ShearShearFid = self.makeShearShearCells()
+        self.PosShearFid = self.makePosShearCells()
+        self.PosPosFid = self.makePosPosCells()
+        self.ccl_cls = np.vstack((self.ShearShearFid, self.PosShearFid, self.PosPosFid))
         self.buildCovMatrix()
         self.getDerivs(cosmo)
         self.getFisher(cosmo)
         self.has_run = True
         print('Done')
         
-    def emcee(self, mcparams):
-        data = self.C_ells
-        
-        
-        def lnprob(theta):
-            cosmo = ccl.Cosmology(Omega_c=theta[1], 
-                   Omega_b=0.049, 
-                   h=0.9727, 
-                   sigma8=theta[0], 
-                   n_s=0.9645, 
-                   transfer_function='eisenstein_hu')
-            theory = self.makeCells(cosmo)
-            diff = np.array(data) - np.array(theory)
-            #return -sum(np.dot(diff[l], np.dot(self.invcov_list[l], diff[l]))/2
-            #           for l in range(len(self.invcov_list)))
-            #return -np.dot(diff[0], np.dot(self.invcov_list[0], diff[0]))/2
-            return -sum(diff**2)
-
-
-        ndim = 1
-        nwalkers = 8
-        nsteps = 600
-        
-        #p00 = [np.array([0.2666, 0.831]) * np.ones(2) \
-        #    + 0.05 * numpy.random.uniform(-1, 2, 2) 
-        #       for i in range(nwalkers)] 
-        p00 = [np.array([0.831]) + 0.05 * numpy.random.uniform(-1, 2) for i in range(8)]
-        
-        self.sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob)   
-        self.pos, self.prob, self.state = self.sampler.run_mcmc(p00, 50)
-        self.sampler.reset()
-        self.sampler.run_mcmc(self.pos, nsteps, rstate0=self.state)
         
 #    @lru_cache
     def getAi(self, beta, cosmo, dNdz, Mr_s=-20.70, Q=1.23, alpha_lum=-1.23, phi_0=0.0094, P=-0.3, mlim=25.3, Lp= 1.):
@@ -775,30 +814,30 @@ class Fisher:
             dNdz_dict_source[b] += self.scores[i]*inbin[i]
         return dNdz_dict_source
 
-    def getC_ellOfzoutlier1(self, zoutlier):
+    def getC_ellOfzoutlier1_ss(self, zoutlier):
         index = 0
         dNdz_dict_source = self._outlier_helper(index, zoutlier)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
     
-    def getC_ellOfzoutlier2(self, zoutlier):
+    def getC_ellOfzoutlier2_ss(self, zoutlier):
         index = 1
         dNdz_dict_source = self._outlier_helper(index, zoutlier)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzoutlier3(self, zoutlier):
+    def getC_ellOfzoutlier3_ss(self, zoutlier):
         index = 2
         dNdz_dict_source = self._outlier_helper(index, zoutlier)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzoutlier4(self, zoutlier):
+    def getC_ellOfzoutlier4_ss(self, zoutlier):
         index = 3
         dNdz_dict_source = self._outlier_helper(index, zoutlier)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzoutlier5(self, zoutlier):
+    def getC_ellOfzoutlier5_ss(self, zoutlier):
         index = 4
         dNdz_dict_source = self._outlier_helper(index, zoutlier)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
     
     def _bias_helper(self, idx, zbias):
         dNdz_dict_source = {}
@@ -826,42 +865,80 @@ class Fisher:
         return dNdz_dict_source
     
     
-    def getC_ellOfIA_amp(self, A0):
-        return self._helper(self.cosmo, self.dNdz_dict_source, A0=A0)
+    def getC_ellOfIA_amp_ss(self, A0):
+        return self._helper_ss(self.cosmo, self.dNdz_dict_source, A0=A0)
         
-    def getC_ellOfIA_highz(self, etah):
-        return self._helper(self.cosmo, self.dNdz_dict_source, etah=etah)
+    def getC_ellOfIA_highz_ss(self, etah):
+        return self._helper_ss(self.cosmo, self.dNdz_dict_source, etah=etah)
         
-    def getC_ellOfIA_lowz(self, etal):
-        return self._helper(self.cosmo, self.dNdz_dict_source, etal=etal)
+    def getC_ellOfIA_lowz_ss(self, etal):
+        return self._helper_ss(self.cosmo, self.dNdz_dict_source, etal=etal)
         
-    def getC_ellOfIA_beta(self, beta):
-        return self._helper(self.cosmo, self.dNdz_dict_source, beta=beta)
+    def getC_ellOfIA_beta_ss(self, beta):
+        return self._helper_ss(self.cosmo, self.dNdz_dict_source, beta=beta)
 
-    def getC_ellOfzbias1(self, zbias):
+
+    def getC_ellOfIA_amp_sp(self, A0):
+        return self._helper_sp(self.cosmo, self.dNdz_dict_source, A0=A0)
+        
+    def getC_ellOfIA_highz_sp(self, etah):
+        return self._helper_sp(self.cosmo, self.dNdz_dict_source, etah=etah)
+        
+    def getC_ellOfIA_lowz_sp(self, etal):
+        return self._helper_sp(self.cosmo, self.dNdz_dict_source, etal=etal)
+        
+    def getC_ellOfIA_beta_sp(self, beta):
+        return self._helper_sp(self.cosmo, self.dNdz_dict_source, beta=beta)
+
+    def getC_ellOfzbias1_ss(self, zbias):
         index = 0
         dNdz_dict_source = self._bias_helper(index, zbias)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
     
-    def getC_ellOfzbias2(self, zbias):
+    def getC_ellOfzbias2_ss(self, zbias):
         index = 1
         dNdz_dict_source = self._bias_helper(index, zbias)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzbias3(self, zbias):
+    def getC_ellOfzbias3_ss(self, zbias):
         index = 2
         dNdz_dict_source = self._bias_helper(index, zbias)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzbias4(self, zbias):
+    def getC_ellOfzbias4_ss(self, zbias):
         index = 3
         dNdz_dict_source = self._bias_helper(index, zbias)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzbias5(self, zbias):
+    def getC_ellOfzbias5_ss(self, zbias):
         index = 4
         dNdz_dict_source = self._bias_helper(index, zbias)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzbias1_sp(self, zbias):
+        index = 0
+        dNdz_dict_source = self._bias_helper(index, zbias)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+    
+    def getC_ellOfzbias2_sp(self, zbias):
+        index = 1
+        dNdz_dict_source = self._bias_helper(index, zbias)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzbias3_sp(self, zbias):
+        index = 2
+        dNdz_dict_source = self._bias_helper(index, zbias)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzbias4_sp(self, zbias):
+        index = 3
+        dNdz_dict_source = self._bias_helper(index, zbias)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzbias5_sp(self, zbias):
+        index = 4
+        dNdz_dict_source = self._bias_helper(index, zbias)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
 
     def _variance_helper(self, idx, zvar):
         dNdz_dict_source = {}
@@ -888,32 +965,57 @@ class Fisher:
             dNdz_dict_source[b] += self.scores[i]*inbin[i]
         return dNdz_dict_source
 
-    def getC_ellOfzvariance1(self, zvariance):
+    def getC_ellOfzvariance1_ss(self, zvariance):
         index = 0
         dNdz_dict_source = self._variance_helper(index, zvariance)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzvariance2(self, zvariance):
+    def getC_ellOfzvariance2_ss(self, zvariance):
         index = 1
         dNdz_dict_source = self._variance_helper(index, zvariance)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzvariance3(self, zvariance):
+    def getC_ellOfzvariance3_ss(self, zvariance):
         index = 2
         dNdz_dict_source = self._variance_helper(index, zvariance)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzvariance4(self, zvariance):
+    def getC_ellOfzvariance4_ss(self, zvariance):
         index = 3
         dNdz_dict_source = self._variance_helper(index, zvariance)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def getC_ellOfzvariance5(self, zvariance):
+    def getC_ellOfzvariance5_ss(self, zvariance):
         index = 4
         dNdz_dict_source = self._variance_helper(index, zvariance)
-        return self._helper(self.cosmo, dNdz_dict_source)
+        return self._helper_ss(self.cosmo, dNdz_dict_source)
 
-    def _helper(self, cosmo, dNdz_dict_source, A0=None, beta=None, etal=None, etah=None):
+    def getC_ellOfzvariance1_sp(self, zvariance):
+        index = 0
+        dNdz_dict_source = self._variance_helper(index, zvariance)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzvariance2_sp(self, zvariance):
+        index = 1
+        dNdz_dict_source = self._variance_helper(index, zvariance)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzvariance3_sp(self, zvariance):
+        index = 2
+        dNdz_dict_source = self._variance_helper(index, zvariance)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzvariance4_sp(self, zvariance):
+        index = 3
+        dNdz_dict_source = self._variance_helper(index, zvariance)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+
+    def getC_ellOfzvariance5_sp(self, zvariance):
+        index = 4
+        dNdz_dict_source = self._variance_helper(index, zvariance)
+        return self._helper_sp(self.cosmo, dNdz_dict_source)
+
+    def _helper_ss(self, cosmo, dNdz_dict_source, A0=None, beta=None, etal=None, etah=None):
         if not beta:
             beta = self.beta
         if not etal:
@@ -928,42 +1030,144 @@ class Fisher:
         ia = self.getAi(beta, cosmo, dNdz=tuple(dNdz_dict_source[self.keyj])) * ia0
         lens2 = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, dNdz_dict_source[self.keyj]), ia_bias=(self.zmid, ia))
         return ccl.angular_cl(cosmo, lens1, lens2, self.ell)
-    
 
-    def getC_ellOfSigma8(self, sigma8):
+    def _helper_sp(self, cosmo, dNdz_dict_source, A0=None, beta=None, etal=None, etah=None):
+        if not beta:
+            beta = self.beta
+        if not etal:
+            etal = self.etal
+        if not etah:
+            etah = self.etah
+        if not A0:
+            A0 = self.A0
+        pos = ccl.NumberCountsTracer(self.cosmo, dndz=(self.zmid, self.dNdz_dict_lens[self.keyl]), has_rsd=False, bias=(self.zmid, self.gbias_dict[self.keyl]*np.ones_like(self.zmid)))
+        ia0 =  A0 * np.array([self.A_l(zi, etal) for zi in self.zmid]) * np.array([self.A_h(zi, etah) for zi in self.zmid])
+        ia = self.getAi(beta, cosmo, dNdz=tuple(dNdz_dict_source[self.keys])) * ia0
+        lens = ccl.WeakLensingTracer(cosmo, dndz=(self.zmid, dNdz_dict_source[self.keys]), ia_bias=(self.zmid, ia))
+        return ccl.angular_cl(cosmo, pos, lens, self.ell)
+
+
+    def getC_ellOfgbias_ss(self, gbias):
+        pos1 = ccl.NumberCountsTracer(self.cosmo, dndz=(self.zmid, self.dNdz_dict_lens[self.key]), has_rsd=False, bias=(self.zmid, gbias*np.ones_like(self.zmid)))
+        return ccl.angular_cl(cosmo, pos1, pos1, self.ell)
+
+
+    def _helper_pp(self, cosmo):
+        pos1 = ccl.NumberCountsTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_lens[self.key]), has_rsd=False, bias=(self.zmid, self.gbias_dict[self.key]e*np.ones_like(self.zmid)))
+        return ccl.angular_cl(cosmo, pos1, pos1, self.ell)
+
+    def getC_ellOfSigma8_ss(self, sigma8):
         cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=sigma8, n_s=0.9645, 
             transfer_function='eisenstein_hu')
-        return self._helper(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+        return self._helper_ss(cosmo, dNdz_dict_source=self.dNdz_dict_source)
 
-    def getC_ellOfOmegab(self, Omega_b):
+    def getC_ellOfOmegab_ss(self, Omega_b):
         cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=Omega_b, h=0.6727, sigma8=0.831, n_s=0.9645, 
             transfer_function='eisenstein_hu')
-        return self._helper(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+        return self._helper_ss(cosmo, dNdz_dict_source=self.dNdz_dict_source)
 
-    def getC_ellOfh(self, h):
+    def getC_ellOfh_ss(self, h):
         cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=h, sigma8=0.831, n_s=0.9645, 
             transfer_function='eisenstein_hu')
-        return self._helper(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+        return self._helper_ss(cosmo, dNdz_dict_source=self.dNdz_dict_source)
 
-    def getC_ellOfn_s(self, n_s):
+    def getC_ellOfn_s_ss(self, n_s):
         cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=n_s, 
             transfer_function='eisenstein_hu')
-        return self._helper(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+        return self._helper_ss(cosmo, dNdz_dict_source=self.dNdz_dict_source)
 
 
-    def getC_ellOfOmegam(self, Omega_m):
+    def getC_ellOfOmegam_ss(self, Omega_m):
         cosmo = ccl.Cosmology(Omega_c=Omega_m-0.049, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, 
             transfer_function='eisenstein_hu')
-        return self._helper(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+        return self._helper_ss(cosmo, dNdz_dict_source=self.dNdz_dict_source)
 
 
-    def getC_ellOfw0(self, w_0):
+    def getC_ellOfw0_ss(self, w_0):
         cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, w0=w_0, 
             transfer_function='eisenstein_hu')
-        return self._helper(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+        return self._helper_ss(cosmo, dNdz_dict_source=self.dNdz_dict_source)
 
 
-    def getC_ellOfwa(self, w_a):
+    def getC_ellOfwa_ss(self, w_a):
         cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, wa=w_a, 
             transfer_function='eisenstein_hu')
-        return self._helper(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+        return self._helper_ss(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+
+
+    def getC_ellOfSigma8_sp(self, sigma8):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=sigma8, n_s=0.9645, 
+            transfer_function='eisenstein_hu')
+        return self._helper_sp(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+
+    def getC_ellOfOmegab_sp(self, Omega_b):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=Omega_b, h=0.6727, sigma8=0.831, n_s=0.9645, 
+            transfer_function='eisenstein_hu')
+        return self._helper_sp(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+
+    def getC_ellOfh_sp(self, h):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=h, sigma8=0.831, n_s=0.9645, 
+            transfer_function='eisenstein_hu')
+        return self._helper_sp(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+
+    def getC_ellOfn_s_sp(self, n_s):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=n_s, 
+            transfer_function='eisenstein_hu')
+        return self._helper_sp(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+
+
+    def getC_ellOfOmegam_sp(self, Omega_m):
+        cosmo = ccl.Cosmology(Omega_c=Omega_m-0.049, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, 
+            transfer_function='eisenstein_hu')
+        return self._helper_sp(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+
+
+    def getC_ellOfw0_sp(self, w_0):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, w0=w_0, 
+            transfer_function='eisenstein_hu')
+        return self._helper_sp(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+
+
+    def getC_ellOfwa_sp(self, w_a):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, wa=w_a, 
+            transfer_function='eisenstein_hu')
+        return self._helper_sp(cosmo, dNdz_dict_source=self.dNdz_dict_source)
+
+
+    def getC_ellOfSigma8_pp(self, sigma8):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=sigma8, n_s=0.9645, 
+            transfer_function='eisenstein_hu')
+        return self._helper_pp(cosmo)
+
+    def getC_ellOfOmegab_pp(self, Omega_b):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=Omega_b, h=0.6727, sigma8=0.831, n_s=0.9645, 
+            transfer_function='eisenstein_hu')
+        return self._helper_pp(cosmo)
+
+    def getC_ellOfh_pp(self, h):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=h, sigma8=0.831, n_s=0.9645, 
+            transfer_function='eisenstein_hu')
+        return self._helper_pp(cosmo)
+
+    def getC_ellOfn_s_pp(self, n_s):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=n_s, 
+            transfer_function='eisenstein_hu')
+        return self._helper_pp(cosmo)
+
+
+    def getC_ellOfOmegam_pp(self, Omega_m):
+        cosmo = ccl.Cosmology(Omega_c=Omega_m-0.049, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, 
+            transfer_function='eisenstein_hu')
+        return self._helper_pp(cosmo)
+
+
+    def getC_ellOfw0_pp(self, w_0):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, w0=w_0, 
+            transfer_function='eisenstein_hu')
+        return self._helper_pp(cosmo)
+
+
+    def getC_ellOfwa_pp(self, w_a):
+        cosmo = ccl.Cosmology(Omega_c=0.2666, Omega_b=0.049, h=0.6727, sigma8=0.831, n_s=0.9645, wa=w_a, 
+            transfer_function='eisenstein_hu')
+        return self._helper_pp(cosmo)
