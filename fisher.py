@@ -40,7 +40,9 @@ def plot_contours(matrix, sigmas, fid, **kwargs):
     maxeig = eig[1][np.argmax(eig[0])]
     theta = np.arctan2(maxeig[1], maxeig[0])
     el = matplotlib.patches.Ellipse(fid, 2*a, 2*b, angle=-np.degrees(theta), alpha=0.3, **kwargs)
-    return el, ((fid[0]-3*a*np.cos(theta), fid[0]+3*a*np.cos(theta)), (fid[1]-3*a*np.sin(theta), fid[1]+3*a*np.sin(theta)))
+    xlim = np.sqrt(a**2*np.cos(theta)**2 + b**2*np.sin(theta)**2)
+    ylim = np.sqrt(a**2*np.sin(theta)**2 + b**2*np.cos(theta)**2)
+    return el, xlim, ylim
 
 def marginalize(fisher_matrix, i, j):
     return np.linalg.inv(np.linalg.inv(fisher_matrix)[np.ix_([i,j], [i,j])]) 
