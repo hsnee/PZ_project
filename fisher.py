@@ -261,7 +261,7 @@ def FullPlot(params, *args, labels='LongString'):
 
 
 class Fisher:
-    def __init__(self, cosmo, zvariance=[1,1,1,1,1], zbias=[0,0,0,0,0], outliers=[1,1,1,1,1], calcCov=False, plot_label=None, end=None, masked=None):
+    def __init__(self, cosmo, zvariance=[1,1,1,1,1], zbias=[0,0,0,0,0], outliers=[1,1,1,1,1], calcCov=False, plot_label=None, end=None, probe='3x2pt'):
         self.zvariance = zvariance
         self.zbias = zbias
         self.outliers = outliers
@@ -389,24 +389,21 @@ class Fisher:
             'zoutlier3': 1/2**2,
             'zoutlier4': 1/2**2,
             'zoutlier5': 1/2**2,
-            'A0': 1/2**2,
-            'beta': 1/2**2,
-            'etal': 1/2**2,
-            'etah': 1/2**2
+            'A0': 1/3.9**2,
+            'beta': 1/1.6**2,
+            'etal': 1/2.3**2,
+            'etah': 1/0.8**2
         }
         for i in range(10):
             string = 'gbias'+str(i+1)
             self.priors[string] = 1/0.9**2
         self.param_order = ['omega_m', 'sigma_8', 'n_s', 'w_0', 'w_a', 'omega_b', 'h', 'A0', 'beta', 'etal', 'etah'] + ['zbias'+str(i) for i in range(1, 6)] + ['zvariance'+str(i) for i in range(1,6)] + ['zoutlier'+str(i) for i in range(1,6)] + ['gbias'+str(i) for i in range(1,11)]
-        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$', r'$A_0$', r'$\beta$', r'$\eta_l$', r'$\eta_h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)] + [rf'$b_g^{i}' for i in range(1,11)]
+        self.param_labels = [r'$\Omega_m$', r'$\sigma_8$', r'$n_s$', r'$w_0$', r'$w_a$', r'$\Omega_b$', r'$h$', r'$A_0$', r'$\beta$', r'$\eta_l$', r'$\eta_h$'] + [r'$z_{bias}$'+str(i) for i in range(1, 6)] + [r'$\std{z}$'+str(i) for i in range(1,6)] + [r'$out$'+str(i) for i in range(1,6)] + [rf'$b_g^{i}$' for i in range(1,11)]
         if end:
             self.end = end
         else:
             self.end = len(self.vals)
-        if masked:
-            self.masked = None
-        else:
-            self.masked = masked
+        self.probe = probe
         
     def __repr__(self):
         return f'Run status: {self.has_run} \
@@ -462,27 +459,29 @@ class Fisher:
             tomofilter = uniform.pdf(self.zmid, loc=x, scale=x2-x)
             photoz_model = PhotozModel(self.pdf_z, core, [tomofilter])
             dNdz_dict_source[bin_centers[index]] = photoz_model.get_pdf()[0]
-            f = CubicSpline(self.zmid, dNdz_dict_source[bin_centers[index]])
-            qs.append(quad(f, 0, 4)[0])
-        norm = 1
-        
-        if implement_outliers:
-            # inbin = [0.009780926739896716, 0.0022554556214481247, 0.020947481173020983, 0.04831089597165704, 0.07238322930340861]
-            inbin = [0.03]*5
-            inbin = [inbin[i]*self.outliers[i] for i in range(len(inbin))]
-            norm = 1 - sum(inbin)
 
-        dNdz_dict_source = self._NormalizePZ(qs, dNdz_dict_source, 5/norm)
-        self.dNdz_dict_source = dNdz_dict_source
-        
+
         if implement_outliers:
-            self.scores = []
+            self.dNdz_dict_source = {}
+            self.scores = {}
             self.KDEs = pickle.load(open('KDEs.p', 'rb'))
-            for i, b in enumerate(list(sorted(self.dNdz_dict_source.keys()))):
+            for i, b in enumerate(list(sorted(dNdz_dict_source.keys()))):
                 kde = self.KDEs[i]
-                self.scores.append(np.exp(kde.score_samples(np.array(self.zmid).reshape(-1, 1))))
-                self.dNdz_dict_source[b] += self.scores[i]*inbin[i]
-            
+                self.scores[i] = np.exp(kde.score_samples(np.array(self.zmid).reshape(-1, 1)))
+                f = CubicSpline(self.zmid, dNdz_dict_source[b])
+                q = quad(f, 0, 4)[0]
+                dNdz_dict_source[b] /= q
+                fo = CubicSpline(self.zmid, self.scores[i])
+                qo = quad(fo, 0, 4)[0]
+                self.scores[i] /= qo
+                self.dNdz_dict_source[b] = dNdz_dict_source[b]*0.85+self.scores[i]*0.15
+        else:
+            self.dNdz_dict_source = {}
+            for i, b in enumerate(list(sorted(dNdz_dict_source.keys()))):
+                f = CubicSpline(self.zmid, dNdz_dict_source[b])
+                q = quad(f, 0, 4)[0]
+                self.dNdz_dict_source[b] = dNdz_dict_source[b]/q
+                
     def getElls(self, file='ell-values.txt'):
         print('Getting Ells')
         ell = pd.read_csv(file, names=['ell'])
@@ -610,67 +609,91 @@ class Fisher:
     
     def buildCovMatrix(self):
         print('Getting covariance matrix')
-        invcov_SRD = pd.read_csv('Y10_3x2pt_inv.txt', names=['a','b'], delimiter=' ')
-        self.invcov = np.array(invcov_SRD['b']).reshape(1000, 1000)
+        if self.probe == '3x2pt':
+            invcov_SRD = pd.read_csv('Y10_3x2pt_inv.txt', 
+                                     names=['a','b'], delimiter=' ')
+            mat_len = 1000
+        elif self.probe == 'ss':
+            invcov_SRD = pd.read_csv('Y10_shear_shear_inv.txt', 
+                                     names=['a','b'], delimiter=' ')
+            mat_len = 300
+        elif self.probe == 'sl':
+            invcov_SRD = pd.read_csv('Y10_shear_pos_inv.txt',
+                                     names=['a','b'], delimiter=' ')
+            mat_len = 500
+        elif self.probe == 'll':
+            invcov_SRD = pd.read_csv('Y10_pos_pos_inv.txt', 
+                                     names=['a','b'], delimiter=' ')
+            mat_len = 200
+        
+        else:
+            raise ValueError('Unkown Probe')
+            
+        self.invcov = np.array(invcov_SRD['b']).reshape(mat_len, mat_len)
         
         
-    def getDerivs(self):
+    def getDerivs(self, param=None):
         print('Getting derivatives')
-
-        self.derivs_sig = {}
-        for var in self.param_order[:self.end]:
+        if not param:
+            self.derivs_sig = {}
+            params = self.param_order[:self.end]
+        else:
+            params = [param]
+        for var in params:
             print(var)
             zbin = 0
             j = 0
-            derivs1, derivs2, derivs3 = [], [], []
+            to_concat = []
             slst = list(self.dNdz_dict_source.keys())
             llst = list(self.dNdz_dict_lens.keys())
-            if var not in self.funcs_ss.keys():
-                derivs1 = list(np.zeros_like(self.ShearShearFid))
-            else:
-                for i, key in enumerate(slst):    
-                    for keyj in slst[i:]:
-                        self.key = key
-                        self.keyj = keyj
-                        f = nd.Derivative(self.funcs_ss[var], full_output=True, step=0.01)
-                        val, info = f(self.vals[var])
-                        derivs1.append(val)
-                derivs1 = np.array(derivs1)
-            if var not in self.funcs_sp.keys():
-                derivs2 = list(np.zeros_like(self.PosShearFid))
-            else:
-                for l, keyl in enumerate(llst):
-                    for s, keys in enumerate(slst):
-                        if (l, s) in self.accept:
-                            self.keyl = keyl
-                            self.keys = keys 
-                            f = nd.Derivative(self.funcs_sp[var], full_output=True, step=0.01)
+            if self.probe in ['ss', '3x2pt']:
+                if var not in self.funcs_ss.keys():
+                    derivs1 = list(np.zeros_like(self.ShearShearFid))
+                else:
+                    derivs1 = []
+                    for i, key in enumerate(slst):    
+                        for keyj in slst[i:]:
+                            self.key = key
+                            self.keyj = keyj
+                            f = nd.Derivative(self.funcs_ss[var], full_output=True, step=0.01)
                             val, info = f(self.vals[var])
-                            derivs2.append(val)
-                derivs2 = np.array(derivs2) 
-            if var not in self.funcs_pp.keys():
-                derivs3 = list(np.zeros_like(self.PosPosFid))
-            else:
-                for i, key in enumerate(llst):
-                    self.key = key
-                    f = nd.Derivative(self.funcs_pp[var], full_output=True, step=0.01)
-                    val, info = f(self.vals[var])
-                    derivs3.append(val)
-            derivs3 = np.array(derivs3)
-            self.derivs_sig[var] = np.vstack((derivs1, derivs2, derivs3))
+                            derivs1.append(val)
+                    derivs1 = np.array(derivs1)
+                to_concat.append(derivs1)
+            
+            if self.probe in ['sl', '3x2pt']:
+                if var not in self.funcs_sp.keys():
+                    derivs2 = list(np.zeros_like(self.PosShearFid))
+                else:
+                    derivs2 = []
+                    for l, keyl in enumerate(llst):
+                        for s, keys in enumerate(slst):
+                            if (l, s) in self.accept:
+                                self.keyl = keyl
+                                self.keys = keys 
+                                f = nd.Derivative(self.funcs_sp[var], full_output=True, step=0.01)
+                                val, info = f(self.vals[var])
+                                derivs2.append(val)
+                    derivs2 = np.array(derivs2) 
+                to_concat.append(derivs2)
+            if self.probe in ['ll', '3x2pt']:
+                if var not in self.funcs_pp.keys():
+                    derivs3 = list(np.zeros_like(self.PosPosFid))
+                else:
+                    derivs3 = []
+                    for i, key in enumerate(llst):
+                        self.key = key
+                        f = nd.Derivative(self.funcs_pp[var], full_output=True, step=0.01)
+                        val, info = f(self.vals[var])
+                        derivs3.append(val)
+                    derivs3 = np.array(derivs3)
+                to_concat.append(derivs3)
+            self.derivs_sig[var] = np.vstack(tuple(to_concat))
             
     def getFisher(self):
         print('Building fisher matrix')
         fisher = np.zeros((self.end, self.end))
         derivs = deepcopy(self.derivs_sig)
-        for var in self.param_order[:self.end]:
-            if self.masked is not None:
-                if 'ss' in self.masked:
-                    derivs[var][:15] = 0
-                if 'sl' in self.masked:
-                    derivs[var][15:40] = 0
-                if 'll' in self.masked:
-                    derivs[var][40:] = 0
         for i, var1 in enumerate(self.param_order[:self.end]):
             for j, var2 in enumerate(self.param_order[:self.end]):
                 fisher[i][j] = derivs[var1].flatten().T @ self.invcov @ derivs[var2].flatten()
@@ -684,10 +707,17 @@ class Fisher:
         self._makeSourcePZ()
         self._makeLensPZ()
         self.getElls()
-        self.ShearShearFid = self.makeShearShearCells()
-        self.PosShearFid = self.makePosShearCells()
-        self.PosPosFid = self.makePosPosCells()
-        self.ccl_cls = np.vstack((self.ShearShearFid, self.PosShearFid, self.PosPosFid))
+        all_cls = []
+        if self.probe in ['3x2pt', 'ss']:
+            self.ShearShearFid = self.makeShearShearCells()
+            all_cls.append(self.ShearShearFid)
+        if self.probe in ['3x2pt', 'sl']:
+            self.PosShearFid = self.makePosShearCells()
+            all_cls.append(self.PosShearFid)
+        if self.probe in ['3x2pt', 'll']:
+            self.PosPosFid = self.makePosPosCells()
+            all_cls.append(self.PosPosFid)
+        self.ccl_cls = np.vstack(tuple(all_cls))
         self.buildCovMatrix()
         self.getDerivs()
         self.fisher = self.getFisher()
@@ -1061,7 +1091,11 @@ class Fisher:
         pos1 = ccl.NumberCountsTracer(self.cosmo, dndz=(self.zmid, self.dNdz_dict_lens[self.key]), has_rsd=False, bias=(self.zmid, gbias*np.ones_like(self.zmid)))
         return ccl.angular_cl(self.cosmo, pos1, pos1, self.ell)
 
-
+    def getC_ellOfgbias_sp(self, gbias):
+        pos1 = ccl.NumberCountsTracer(self.cosmo, dndz=(self.zmid, self.dNdz_dict_lens[self.key]), has_rsd=False, bias=(self.zmid, gbias*np.ones_like(self.zmid)))
+        #pos2 = ccl.WeakLensingTracer(self.cosmo, 
+        return ccl.angular_cl(self.cosmo, pos1, pos1, self.ell)
+    
     def _helper_pp(self, cosmo):
         pos1 = ccl.NumberCountsTracer(cosmo, dndz=(self.zmid, self.dNdz_dict_lens[self.key]), has_rsd=False, bias=(self.zmid, self.gbias_dict[self.key]*np.ones_like(self.zmid)))
         return ccl.angular_cl(cosmo, pos1, pos1, self.ell)
