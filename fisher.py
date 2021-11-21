@@ -275,7 +275,7 @@ class Fisher:
         self.etal = 0
         self.etah = 0
         self.gbias = [1.376695, 1.451179, 1.528404, 1.607983, 1.689579, 1.772899, 1.857700, 1.943754, 2.030887, 2.118943] 
-        self.IA_interp = pickle.load(open('IA_interp.p', 'rb'))
+        self.IA_interp = pickle.load(open('pickles/IA_interp.p', 'rb'))
         self.calcCov = calcCov
         self.plot_label = plot_label
         self.cosmo = cosmo
@@ -471,7 +471,7 @@ class Fisher:
         if implement_outliers:
             self.dNdz_dict_source = {}
             self.scores = {}
-            self.KDEs = pickle.load(open('KDEs.p', 'rb'))
+            self.KDEs = pickle.load(open('pickles/KDEs.p', 'rb'))
             for i, b in enumerate(list(sorted(dNdz_dict_source.keys()))):
                 kde = self.KDEs[i]
                 self.scores[i] = np.exp(kde.score_samples(np.array(self.zmid).reshape(-1, 1)))
